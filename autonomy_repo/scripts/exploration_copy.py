@@ -72,6 +72,10 @@ class Explore(Node):
         self.nav_state_sub = self.create_subscription(
             Bool, "/nav_success", self.explore_callback, 10)
         
+        self.image_det_sub = self.create_subscription(
+            Bool, "/detector_bool", self.image_det_callback, 10
+        )
+        
         self.nav_state_pub = self.create_publisher(Bool, "/nav_success", 10)
 
 
@@ -79,14 +83,19 @@ class Explore(Node):
         self.state: T.Optional[TurtleBotState] = None
         self.message_sent = None
 
-
+        self.stop_detected = False
         self.timer_ = self.create_timer(5.0, self.timer_callback)
         self.attempts = 0
         self.have_occu = False
         self.have_state = False
-        self.bad_goals = 0
 
-    
+    def image_det_callback(self, msg:Bool) -> None:
+        if msg.data:
+            self.stop_detected = True
+            self.get_logger().info('Stop sign detected')
+            nav_msg = Bool()
+            nav_msg.data = False
+            self.nav_state_pub.publish(nav_msg)
     
     def timer_callback(self) -> None:
         # Send message once to start the exploration
@@ -115,6 +124,10 @@ class Explore(Node):
         self.state = msg
 
     def explore_callback(self, msg:Bool) -> None:
+        if self.stop_detected:
+            self.get_logger().info('Detected and stopped (for real this time)')
+            self.goal_post_pub.publish(self.state)
+            return 
         if self.have_occu and self.have_state:
             success = msg.data
             self.get_logger().info('exp Bool' + str(success) + str(type(success)))
@@ -137,6 +150,8 @@ class Explore(Node):
                 self.goal_post_pub.publish(msgo)
             else:
                 self.get_logger().info('Nowhere to go')
+        else:
+            self.get_logger().info('Detected and stopped')
 
 
     
@@ -162,7 +177,7 @@ class Explore(Node):
             # Use the random row index to select the random row
             closest_row = sorted_posts[self.attempts] 
             self.attempts += 1
-            return closest_row   
+            return closest_row    
         else:
             # If really can't find a place
             self.get_logger().info('Nowhere to go')
